@@ -1,62 +1,88 @@
-# PathSense — MVP
+# PathSense — Technical Project Implementation & Architecture
 
-AI-Powered Real-Time Obstacle Awareness for the Visually Impaired.
+> **Real-time monocular depth estimation and object hazard detection spatial navigation assistant for visually impaired users.**
 
-Pipeline: **Camera → YOLO (detection) → Depth Anything V2 (depth) → Obstacle Analysis (fusion, zoning, confidence-weighted risk) → Voice Alert**
+---
 
-## Setup
+## 📌 Executive Summary & Scope
 
+PathSense converts a single RGB camera stream into real-time spoken and binaural spatial-audio movement instructions (e.g., `"Obstacle center, move left"`) without requiring LiDAR or stereo camera rigs. Designed for edge hardware deployment (such as Raspberry Pi 5).
+
+> [!NOTE]
+> **Defensible Engineering Scope**: PathSense does *not* train a new depth estimator or object detector from scratch. Its core novel technical contribution lies in the **Integration and Decision Layer**:
+> 1. **Depth-to-Zone Mapping**: Percentile pooling ($10^{\text{th}}$ percentile closest distance) of dense depth maps into a $3 \times 3$ grid.
+> 2. **Confidence-Weighted Urgency Fusion**: Fuses relative zone depth, COCO hazard class weights, and detector confidence into a unified risk matrix.
+> 3. **Safe-Direction Decision Logic**: Rule-based directional router with Exponential Moving Average (EMA) and temporal hysteresis state machine to eliminate frame flicker.
+> 4. **Spatial Audio Panning Engine**: Equal-power binaural stereo panning ($g_L = \cos(\theta), g_R = \sin(\theta)$) and TTS synthesis.
+
+---
+
+## 🛠️ Architecture & Tech Stack
+
+| Component | Technology / Library | Purpose |
+| :--- | :--- | :--- |
+| **Language** | Python 3.10+ | Core codebase & backend |
+| **DL Backend** | PyTorch | Underlies depth model and YOLO object detector |
+| **Depth Estimation** | HuggingFace Transformers (`Depth Anything V2`) | Dense monocular depth map generation |
+| **Hazard Detection** | Ultralytics (`YOLOv8`) | COCO 80-class hazard detection & bounding box scaling |
+| **Image / Video I/O** | OpenCV (`opencv-python`) | Frame capture, resizing, colormap heatmaps, visual rendering |
+| **Math & Fusion Logic**| NumPy / SciPy | Zone percentile pooling, risk matrix fusion, EMA, binaural gains |
+| **Audio Engine** | `pyttsx3` / HTML5 WebAudio API | Spoken instructions & binaural stereo panned beep generator |
+| **Backend & Web UI** | FastAPI & WebSockets | Real-time REST API, WebSocket frame stream server, web dashboard |
+| **Edge Optimization** | ONNX Runtime / INT8 PTQ | Model quantization & Raspberry Pi 5 benchmark utility |
+
+---
+
+## 🚀 Quickstart Guide
+
+### 1. Installation & Environment Setup
 ```bash
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
+# Clone or navigate to project directory
+cd c:\Users\kamal\Downloads\CV
+
+# Install dependencies
 pip install -r requirements.txt
+pip install -e .
 ```
 
-First run will download pretrained weights for YOLOv8n (~6MB) and Depth Anything V2 Small (~100MB) — needs internet once, then it's cached locally.
-
-## Project structure
-
-```
-PathSense/
-├── depth_module/depth_estimation.py     # Person 1: Depth Anything V2 wrapper
-├── detection_module/yolo_detect.py      # Person 2: YOLOv8 wrapper
-├── obstacle_analysis/analyze.py         # Shared: fusion + zoning + risk scoring (the novel piece)
-├── voice_module/tts_alert.py            # Person 3: TTS + anti-spam smoothing
-├── main.py                              # Combined live pipeline
-└── requirements.txt
-```
-
-## Run the full live demo
-
+### 2. Run Automated Test Suite
 ```bash
-python main.py
+pytest tests/ -v
 ```
-Press `q` in the preview window to quit. On-screen overlay shows each detected object's risk level, zone, and current frame latency (useful for your report's real-time performance numbers).
 
-## Test each module standalone (recommended order for a 3-person team)
-
+### 3. Run Synthetic / Video Demo CLI
 ```bash
-# Person 1 — test depth on a single photo (no camera needed)
-python depth_module/depth_estimation.py path/to/test_image.jpg
+# Synthetic demo mode (Simulates shifting hazard scenarios)
+python scripts/run_demo.py --synthetic
 
-# Person 2 — test detection on a single photo
-python detection_module/yolo_detect.py path/to/test_image.jpg
-
-# Shared — test the fusion/risk logic with fabricated data (no models needed at all)
-python obstacle_analysis/analyze.py
-
-# Person 3 — test voice smoothing logic (stubs the audio engine, no speakers needed)
-python voice_module/tts_alert.py
+# Live WebCam mode
+python scripts/run_demo.py --source 0
 ```
 
-Each of these can be run and verified independently before anyone touches `main.py` — see the project flow discussion for the week-by-week plan.
+### 4. Run Latency Benchmark Profiler
+```bash
+python scripts/benchmark_latency.py --iterations 50
+```
 
-## Known limitations (be upfront about these in your report)
+### 5. Run FastAPI Backend & Web Navigation Dashboard
+```bash
+python backend/server.py
+```
+Open your browser at `http://localhost:8000` to interact with the live dual-feed dashboard, 3x3 risk grid, latency breakdown HUD, and binaural WebAudio spatial audio synthesizer!
 
-- **Depth is relative, not metric.** Depth Anything V2 (Small/base checkpoints) gives a 0–1 "closeness" score, not real meters. Don't claim "1.2 meters" in your demo unless you swap to a metric-depth checkpoint and calibrate it.
-- **Risk thresholds are starting values.** `DANGER_RISK_THRESHOLD` and `CAUTION_RISK_THRESHOLD` in `analyze.py` were picked as reasonable starting points — tune them against your own walk-test data and report the tuning process; that's a legitimate result, not a weakness.
-- **One object spoken per frame.** Only the single highest-risk object triggers speech, to avoid overwhelming the user — documented in `main.py` via `SPEAK_ONLY_ABOVE`.
+---
 
-## Base papers & datasets
+## 📊 Key Algorithms & Formulas
 
-See the project's literature survey — Depth Anything V2 (Yang et al., 2024), YOLO (Redmon et al., 2016), and Said et al. (2023, Sensors) for the obstacle-analysis/navigation framing. Datasets: COCO (detection pretraining), NYU Depth V2 (indoor depth benchmark), KITTI (optional outdoor extension).
+### 1. Equal-Power Binaural Gain Panning
+Satisfies constant total power $g_L^2 + g_R^2 = 1.0$:
+$$g_L = \cos\left( \frac{\theta + 90^\circ}{180^\circ} \cdot \frac{\pi}{2} \right), \quad g_R = \sin\left( \frac{\theta + 90^\circ}{180^\circ} \cdot \frac{\pi}{2} \right)$$
+
+### 2. Confidence-Weighted Risk Fusion Score
+$$Risk(z) = w_{\text{depth}} \cdot D_{\text{norm}}(z) + w_{\text{obj}} \cdot \max_{i \in z} \left( \text{HazardWeight}(C_i) \cdot Conf_i \cdot \text{OverlapFraction}_i(z) \right)$$
+
+---
+
+## 📝 License & Known Limitations
+- **Academic Benchmark Scope**: Monocular depth models output relative closeness. Metric depth calibration remains approximate.
+- **Licenses**: NYU Depth V2 / KITTI / COCO datasets are academic benchmarks.
