@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PathSense — Monocular Depth & Navigation Assistant</title>
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --panel-bg: #1e293b;
+            --accent-blue: #38bdf8;
+            --accent-green: #22c55e;
+            --accent-red: #ef4444;
+            --accent-yellow: #eab308;
+            --text-main: #f8fafc;
+            --text-dim: #94a3b8;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background-color: #090d16;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #334155;
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            color: var(--accent-blue);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            background-color: #064e3b;
+            color: #34d399;
+        }
+
+        main {
+            flex: 1;
+            padding: 1.5rem;
+            max-width: 1400px;
+            margin: 0 auto;
+            width: 100%;
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 1024px) {
+            main { grid-template-columns: 1fr; }
+        }
+
+        .panel {
+            background-color: var(--panel-bg);
+            border-radius: 12px;
+            padding: 1.25rem;
+            border: 1px solid #334155;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3);
+        }
+
+        .panel-header {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--accent-blue);
+            margin-bottom: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* Banner HUD */
+        .hud-banner {
+            grid-column: 1 / -1;
+            background: linear-gradient(90deg, #1e293b, #0f172a);
+            border-radius: 12px;
+            padding: 1.25rem;
+            text-align: center;
+            border: 2px solid #334155;
+            transition: all 0.3s ease;
+        }
+
+        .hud-banner.CLEAR { border-color: var(--accent-green); background: #064e3b22; }
+        .hud-banner.MOVE_LEFT, .hud-banner.SLIGHT_LEFT { border-color: var(--accent-yellow); background: #713f1222; }
+        .hud-banner.MOVE_RIGHT, .hud-banner.SLIGHT_RIGHT { border-color: var(--accent-yellow); background: #713f1222; }
+        .hud-banner.STOP_HAZARD { border-color: var(--accent-red); background: #7f1d1d44; animation: pulse 1s infinite alternate; }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 10px rgba(239, 68, 68, 0.3); }
+            100% { box-shadow: 0 0 25px rgba(239, 68, 68, 0.8); }
+        }
+
+        .hud-action {
+            font-size: 1.8rem;
+            font-weight: 800;
+            letter-spacing: 1px;
+            margin-bottom: 0.25rem;
+        }
+
+        .hud-phrase {
+            font-size: 1.1rem;
+            color: var(--text-dim);
+        }
+
+        /* Video Display Grid */
+        .video-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .video-box {
+            position: relative;
+            background-color: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            aspect-ratio: 4/3;
+        }
+
+        .video-box img, .video-box video, .video-box canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .video-label {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            background: rgba(0,0,0,0.7);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        /* 3x3 Risk Matrix */
+        .grid-3x3 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-top: 1rem;
+        }
+
+        .grid-cell {
+            aspect-ratio: 1;
+            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.9rem;
+            transition: background-color 0.2s;
+            border: 1px solid #475569;
+        }
+
+        .cell-low { background-color: rgba(34, 197, 94, 0.25); color: #4ade80; }
+        .cell-med { background-color: rgba(234, 179, 8, 0.35); color: #fde047; }
+        .cell-high { background-color: rgba(239, 68, 68, 0.45); color: #fca5a5; }
+
+        /* Controls & Buttons */
+        .btn-group {
+            display: flex;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        button {
+            flex: 1;
+            padding: 0.75rem;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            background-color: var(--accent-blue);
+            color: #0f172a;
+            transition: filter 0.2s;
+        }
+
+        button:hover { filter: brightness(1.1); }
+        button.secondary { background-color: #334155; color: var(--text-main); }
+
+        /* Latency HUD Table */
+        .metrics-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .metric-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.4rem 0;
+            border-bottom: 1px solid #334155;
+        }
+
+        .metric-value { font-weight: 700; font-family: monospace; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1><span>👁️</span> PathSense Real-Time Assistant</h1>
+        <div id="connectionStatus" class="status-badge">System Ready</div>
+    </header>
+
+    <main>
+        <!-- Top Banner HUD -->
+        <div id="hudBanner" class="hud-banner CLEAR">
+            <div id="hudAction" class="hud-action">PROCEED CLEAR</div>
+            <div id="hudPhrase" class="hud-phrase">Path clear, proceed forward</div>
+        </div>
+
+        <!-- Left Visual Panel -->
+        <div class="panel">
+            <div class="panel-header">
+                <span>Real-Time Stream Feeds</span>
+                <span id="fpsCounter" style="font-size: 0.85rem; color: var(--accent-blue);">FPS: --</span>
+            </div>
+            <div class="video-grid">
+                <div class="video-box">
+                    <span class="video-label">RGB Camera + 3x3 Risk Overlays</span>
+                    <img id="annotatedStream" src="" alt="Annotated Camera Stream" />
+                </div>
+                <div class="video-box">
+                    <span class="video-label">Depth Anything V2 Heatmap</span>
+                    <img id="depthStream" src="" alt="Depth Heatmap" />
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Control & Analytics Panel -->
+        <div class="panel">
+            <div class="panel-header">System Controls & Audio Synth</div>
+            <div class="btn-group">
+                <button id="btnStartCam">Start Camera</button>
+                <button id="btnSynthDemo" class="secondary">Synthetic Demo</button>
+            </div>
+
+            <div class="panel-header" style="margin-top: 1.5rem;">3x3 Zone Risk Matrix</div>
+            <div class="grid-3x3" id="riskGrid">
+                <div class="grid-cell cell-low">TL<br>0.00</div>
+                <div class="grid-cell cell-low">TC<br>0.00</div>
+                <div class="grid-cell cell-low">TR<br>0.00</div>
+                <div class="grid-cell cell-low">ML<br>0.00</div>
+                <div class="grid-cell cell-low">MC<br>0.00</div>
+                <div class="grid-cell cell-low">MR<br>0.00</div>
+                <div class="grid-cell cell-low">BL<br>0.00</div>
+                <div class="grid-cell cell-low">BC<br>0.00</div>
+                <div class="grid-cell cell-low">BR<br>0.00</div>
+            </div>
+
+            <div class="panel-header" style="margin-top: 1.5rem;">Stage Latency Profile</div>
+            <div class="metrics-list">
+                <div class="metric-row"><span>Depth Inference:</span><span id="latDepth" class="metric-value">-- ms</span></div>
+                <div class="metric-row"><span>Hazard Detection:</span><span id="latDetect" class="metric-value">-- ms</span></div>
+                <div class="metric-row"><span>Zone Risk Fusion:</span><span id="latFusion" class="metric-value">-- ms</span></div>
+                <div class="metric-row"><span>Total Pipeline Latency:</span><span id="latTotal" class="metric-value">-- ms</span></div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Hidden Video & Canvas for WebCam Capture -->
+    <video id="webcam" autoplay playsinline style="display:none;"></video>
+    <canvas id="captureCanvas" width="640" height="480" style="display:none;"></canvas>
+
+    <script>
+        let ws = null;
+        let isStreaming = false;
+        let audioCtx = null;
+        let synthOsc = null;
+        let panNode = null;
+        let gainNode = null;
+        let lastPhrase = "";
+
+        const zoneLabels = ["TL", "TC", "TR", "ML", "MC", "MR", "BL", "BC", "BR"];
+
+        // Init WebAudio API Context for Binaural Spatial Panning Synth
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                synthOsc = audioCtx.createOscillator();
+                gainNode = audioCtx.createGain();
+                
+                if (audioCtx.createStereoPanner) {
+                    panNode = audioCtx.createStereoPanner();
+                    synthOsc.connect(gainNode);
+                    gainNode.connect(panNode);
+                    panNode.connect(audioCtx.destination);
+                } else {
+                    synthOsc.connect(gainNode);
+                    gainNode.connect(audioCtx.destination);
+                }
+
+                synthOsc.type = "sine";
+                synthOsc.frequency.setValueAtTime(440, audioCtx.currentTime);
+                gainNode.gain.setValueAtTime(0.02, audioCtx.currentTime);
+                synthOsc.start();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function updateAudioSynth(params, action) {
+            if (!audioCtx) return;
+            try {
+                const now = audioCtx.currentTime;
+                synthOsc.frequency.setTargetAtTime(params.frequency_hz || 440, now, 0.05);
+                
+                // Pan value: -1.0 (Left) to +1.0 (Right) derived from gains
+                if (panNode) {
+                    const panVal = (params.right_gain || 0.5) - (params.left_gain || 0.5);
+                    panNode.pan.setTargetAtTime(panVal, now, 0.05);
+                }
+
+                const targetGain = (action === 'PROCEED_CLEAR') ? 0.02 : 0.12;
+                gainNode.gain.setTargetAtTime(targetGain, now, 0.05);
+            } catch (e) {}
+        }
+
+        function speakPhrase(phrase) {
+            if ('speechSynthesis' in window && phrase && phrase !== lastPhrase) {
+                lastPhrase = phrase;
+                window.speechSynthesis.cancel();
+                const utter = new SpeechSynthesisUtterance(phrase);
+                utter.rate = 1.2;
+                window.speechSynthesis.speak(utter);
+            }
+        }
+
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws/stream`;
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                document.getElementById('connectionStatus').innerText = "Connected (Live WS)";
+                document.getElementById('connectionStatus').style.backgroundColor = "#064e3b";
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                updateUI(data);
+                if (isStreaming) {
+                    sendNextFrame();
+                }
+            };
+
+            ws.onclose = () => {
+                document.getElementById('connectionStatus').innerText = "Disconnected";
+                document.getElementById('connectionStatus').style.backgroundColor = "#7f1d1d";
+            };
+        }
+
+        function updateUI(data) {
+            // Update streams
+            document.getElementById('annotatedStream').src = data.annotated_image_b64;
+            document.getElementById('depthStream').src = data.depth_heatmap_b64;
+
+            // Update Banner
+            const banner = document.getElementById('hudBanner');
+            banner.className = `hud-banner ${data.action}`;
+            document.getElementById('hudAction').innerText = data.action.replace('_', ' ');
+            document.getElementById('hudPhrase').innerText = data.spoken_phrase;
+
+            // Update Latencies & FPS
+            document.getElementById('fpsCounter').innerText = `FPS: ${data.latency.fps}`;
+            document.getElementById('latDepth').innerText = `${data.latency.depth_ms} ms`;
+            document.getElementById('latDetect').innerText = `${data.latency.detect_ms} ms`;
+            document.getElementById('latFusion').innerText = `${data.latency.fusion_ms} ms`;
+            document.getElementById('latTotal').innerText = `${data.latency.total_ms} ms`;
+
+            // Update 3x3 Risk Grid
+            const gridContainer = document.getElementById('riskGrid');
+            gridContainer.innerHTML = '';
+            const matrix = data.risk_matrix;
+
+            let idx = 0;
+            for (let r = 0; r < 3; r++) {
+                for (let c = 0; c < 3; c++) {
+                    const score = matrix[r][c];
+                    const div = document.createElement('div');
+                    let cellClass = 'cell-low';
+                    if (score >= 0.75) cellClass = 'cell-high';
+                    else if (score >= 0.35) cellClass = 'cell-med';
+
+                    div.className = `grid-cell ${cellClass}`;
+                    div.innerHTML = `${zoneLabels[idx]}<br>${score.toFixed(2)}`;
+                    gridContainer.appendChild(div);
+                    idx++;
+                }
+            }
+
+            // Audio Panning & Voice
+            if (data.audio_params) {
+                updateAudioSynth(data.audio_params, data.action);
+            }
+            speakPhrase(data.spoken_phrase);
+        }
+
+        async function startCamera() {
+            initAudio();
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+                const video = document.getElementById('webcam');
+                video.srcObject = stream;
+                isStreaming = true;
+                if (!ws || ws.readyState !== WebSocket.OPEN) {
+                    connectWebSocket();
+                }
+                video.onloadedmetadata = () => sendNextFrame();
+            } catch (err) {
+                alert("Camera access denied or unavailable: " + err.message);
+            }
+        }
+
+        function sendNextFrame() {
+            if (!isStreaming || !ws || ws.readyState !== WebSocket.OPEN) return;
+            const video = document.getElementById('webcam');
+            const canvas = document.getElementById('captureCanvas');
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, 640, 480);
+            
+            canvas.toBlob((blob) => {
+                if (blob && ws.readyState === WebSocket.OPEN) {
+                    blob.arrayBuffer().then(buf => ws.send(buf));
+                }
+            }, 'image/jpeg', 0.75);
+        }
+
+        document.getElementById('btnStartCam').addEventListener('click', startCamera);
+        
+        // Synthetic Demo Mode
+        document.getElementById('btnSynthDemo').addEventListener('click', () => {
+            initAudio();
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                connectWebSocket();
+            }
+            // Generate synthetic frame on canvas
+            const canvas = document.getElementById('captureCanvas');
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#1e293b';
+            ctx.fillRect(0, 0, 640, 480);
+            ctx.fillStyle = '#ef4444';
+            ctx.fillRect(220, 180, 200, 260); // Synthetic center hazard
+            
+            canvas.toBlob((blob) => {
+                if (blob && ws.readyState === WebSocket.OPEN) {
+                    blob.arrayBuffer().then(buf => ws.send(buf));
+                }
+            }, 'image/jpeg', 0.8);
+        });
+
+        // Auto-connect WS on page load
+        window.addEventListener('load', connectWebSocket);
+    </script>
+</body>
+</html>
