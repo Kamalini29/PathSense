@@ -58,9 +58,9 @@ class ZoneConfig:
 class RiskFusionConfig:
     """Config for confidence-weighted risk fusion formula."""
     # Weight given to depth closeness (1 - normalized_depth)
-    depth_weight: float = 0.55
+    depth_weight: float = 0.60
     # Weight given to detected object risk (class_hazard_weight * confidence)
-    object_weight: float = 0.45
+    object_weight: float = 0.40
     # Default hazard weight for unlisted detected objects
     default_hazard_weight: float = 0.5
     # Global risk thresholds for action decisioning
