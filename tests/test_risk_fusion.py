@@ -31,7 +31,7 @@ def test_risk_fusion_with_detected_hazard():
     mapper = ZoneMapper(zone_config)
     fusion_engine = RiskFusionEngine()
 
-    depth_map = np.zeros((300, 300), dtype=np.float32)
+    depth_map = np.full((300, 300), 0.5, dtype=np.float32)
     zone_result = mapper.process(depth_map)
 
     # Place a high risk car object in the center zone
